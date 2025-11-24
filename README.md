@@ -10,15 +10,16 @@ L’objectif est de montrer comment stocker des données sensibles de manière s
 
 1. **MainActivity**
     - Coordonne l’ensemble du flux de chiffrement et stockage.
-    - Génère un **DEK** (clé de chiffrement de données).
-    - Interagit avec le **KMS simulé** pour obtenir un **KEK**.
-    - Chiffre les credentials et encapsule la DEK avec le KEK.
+    - Génère un **DEK** (clé de chiffrement de données) localement.
+    - Interagit avec le **KMS simulé** pour obtenir un **keyId** associé au KEK.
+    - Chiffre les credentials et demande au KMS d’encapsuler la DEK avec la KEK.
     - Stocke les données chiffrées sur le stockage interne.
 
 2. **KmsSimulator**
     - Simule un **Key Management System**.
-    - Génère des KEK (AES 256 bits).
-    - Permet de "wrap/unwrap" des DEK via AESWrap.
+    - Génère des KEK (AES 256 bits) côté serveur.
+    - Retourne uniquement le **keyId** au Holder pour la référence.
+    - Permet de "wrap/unwrap" des DEK via AESWrap lors de l’échange sécurisé avec le Holder.
 
 3. **CryptoUtils**
     - Fournit des fonctions utilitaires de chiffrement et déchiffrement AES avec IV.
@@ -29,39 +30,45 @@ L’objectif est de montrer comment stocker des données sensibles de manière s
 ## Flux de données sécurisé
 
 1. **Demande de KEK au KMS**  
-   Le KMS renvoie une clé symétrique unique (KEK) avec un identifiant `keyId`.
+   Le Holder demande au KMS une clé KEK.  
+   - KMS génère le KEK.  
+   - **Seul le `keyId` est renvoyé** au Holder (la KEK reste côté KMS).
 
-2. **Génération de la DEK**  
-   Une DEK est générée localement pour chiffrer les credentials.  
-   Dans la version actuelle, la DEK est **exportable** et en mémoire pour simplification.
+2. **Génération de la DEK locale**  
+   Le Holder génère une DEK AES 256 bits en mémoire pour chiffrer les credentials.  
+   - La DEK est locale et connue uniquement du Holder à ce stade.  
+   - Elle permet au Holder de **chiffrer immédiatement les credentials**.
 
 3. **Chiffrement des credentials**  
-   Les credentials (`user:password`) sont chiffrés avec la DEK.  
-   Le chiffrement utilise **AES/CBC/PKCS7Padding** avec un vecteur d’initialisation (IV).
+   Les credentials (`user:password`) sont chiffrés avec la DEK locale.  
+   - Utilisation de **AES/CBC/PKCS7Padding** avec un IV aléatoire pour chaque chiffrement.
 
-4. **Encapsulation de la DEK**  
-   La DEK est encapsulée avec le KEK via **AESWrap**.  
-   Cela garantit que seule la KEK du KMS peut déchiffrer la DEK.
+4. **Encapsulation (wrap) de la DEK via le KMS**  
+   - Le Holder envoie au KMS : le `keyId` et la DEK générée.  
+   - KMS utilise le KEK correspondant pour encapsuler (`wrap`) la DEK.  
+   - Le KMS renvoie la DEK encapsulée au Holder.  
 
 5. **Stockage sécurisé**  
-   Les données suivantes sont stockées dans un fichier interne Android (`holder_data.enc`) :
+   Les éléments suivants sont stockés dans un fichier interne Android (`holder_data.enc`) :
     - IV + données chiffrées
     - `keyId` du KEK
-    - DEK encapsulée (wrappedKey)
+    - DEK encapsulée (`wrappedKey`)  
 
-6. **Déchiffrement pour vérification**  
-   Les données stockées sont lues depuis le fichier interne.  
-   La DEK est utilisée pour déchiffrer les credentials et vérifier la validité du processus.
+6. **Déchiffrement des credentials**  
+   - Pour relire les credentials, le Holder envoie au KMS le `wrappedKey` et le `keyId`.  
+   - KMS **unwrap** la DEK et la renvoie au Holder.  
+   - Le Holder utilise la DEK récupérée pour déchiffrer les credentials.
 
 ---
 
 ## Points clés de sécurité
 
 - **Séparation des clés** : La DEK est utilisée pour chiffrer les données, et la KEK pour protéger la DEK.
-- **AES 256 bits** : Utilisation de chiffrement symétrique fort.
+- **AES 256 bits** : Chiffrement symétrique fort pour DEK et KEK.
 - **IV aléatoire** pour chaque chiffrement, garantissant un chiffrement non déterministe.
 - **Stockage interne sécurisé** : Les données chiffrées et clés encapsulées sont stockées dans un répertoire accessible uniquement à l’application.
-- **KMS simulé** : Permet de démontrer la logique de key wrapping sans exposer de KEK directement.
+- **KMS simulé** : Permet de démontrer la logique de key wrapping et unwrap sans exposer le KEK directement.
+- **DEK locale** : Permet au Holder de chiffrer ses données immédiatement avant le wrapping.
 
 ---
 
@@ -69,8 +76,6 @@ L’objectif est de montrer comment stocker des données sensibles de manière s
 
 - Kotlin
 - Android SDK
-- Android KeyStore (optionnel dans versions précédentes)
+- Android KeyStore (optionnel dans certaines versions)
 - Bouncy Castle (via CryptoUtils et Cipher AESWrap)
 - Base64 pour sérialisation de clés et données chiffrées
-
----

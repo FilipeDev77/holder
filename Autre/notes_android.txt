@@ -1,0 +1,5 @@
+// stocker les credentials dans le disque spas frocément dans le key store  clé privé 
+
+
+// comment stocker les creds du kms dans le tel 
+// comment dechiffrer les creds sur le disque et les charger en mémoire

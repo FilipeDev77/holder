@@ -1,30 +1,39 @@
 package com.example.holder.kms
 
-import android.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import java.util.UUID
 
-data class KeyInfo(val keyId: String, val key: SecretKey)
+data class KeyIdInfo(val keyId: String)
 
 class KmsSimulator {
 
     private val keyStore = mutableMapOf<String, SecretKey>()
 
-    fun generateKey(): KeyInfo {
+    // Génère KEK et renvoie uniquement le keyId
+    fun generateKey(): KeyIdInfo {
         val keyGen = KeyGenerator.getInstance("AES")
         keyGen.init(256)
         val kek = keyGen.generateKey()
         val keyId = UUID.randomUUID().toString()
         keyStore[keyId] = kek
-        return KeyInfo(keyId, kek)
+        return KeyIdInfo(keyId)
     }
 
-    fun unwrapKey(keyId: String, wrappedKey: ByteArray): SecretKey {
+    // Holder envoie (keyId + DEK) -> KMS wrap
+    fun wrapKey(keyId: String, dek: SecretKey): ByteArray {
+        val kek = keyStore[keyId] ?: throw IllegalArgumentException("Invalid keyId")
+        val cipher = Cipher.getInstance("AESWrap")
+        cipher.init(Cipher.WRAP_MODE, kek)
+        return cipher.wrap(dek)
+    }
+
+    // Plus tard : Holder envoie (keyId + wrappedKey) -> KMS unwrap
+    fun unwrapKey(keyId: String, wrapped: ByteArray): SecretKey {
         val kek = keyStore[keyId] ?: throw IllegalArgumentException("Invalid keyId")
         val cipher = Cipher.getInstance("AESWrap")
         cipher.init(Cipher.UNWRAP_MODE, kek)
-        return cipher.unwrap(wrappedKey, "AES", Cipher.SECRET_KEY) as SecretKey
+        return cipher.unwrap(wrapped, "AES", Cipher.SECRET_KEY) as SecretKey
     }
 }
